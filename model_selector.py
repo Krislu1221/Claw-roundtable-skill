@@ -58,8 +58,9 @@ class ModelSelector:
         
         优先级：
         1. 用户显式指定（最高优先级）
-        2. OpenClaw 官方 API
-        3. 标准单一模型配置（降级方案）
+        2. 环境变量 ROUNDTable_MODELS（次高优先级）
+        3. OpenClaw 官方 API
+        4. 标准单一模型配置（降级方案）
         """
         # 优先级 1: 用户显式指定
         if self.user_specified_models:
@@ -67,7 +68,28 @@ class ModelSelector:
             print(f"✅ 使用用户显式指定的 {len(self.available_models)} 个模型")
             return
         
-        # 优先级 2: OpenClaw 官方 API
+        # 优先级 2: 环境变量 ROUNDTable_MODELS
+        # 格式："model1:tag1,tag2;model2:tag3,tag4"
+        # 示例："bailian/glm-5:chinese;bailian/kimi-k2.5:creative"
+        env_models = os.environ.get('ROUNDTable_MODELS')
+        if env_models:
+            parsed_models = []
+            for item in env_models.split(';'):
+                if ':' in item:
+                    model_id, tags_str = item.split(':', 1)
+                    parsed_models.append({
+                        'id': model_id.strip(),
+                        'name': model_id.strip().split('/')[-1],
+                        'tags': [t.strip() for t in tags_str.split(',')],
+                        'priority': 2
+                    })
+            
+            if parsed_models:
+                self.available_models = parsed_models
+                print(f"✅ 从环境变量加载 {len(parsed_models)} 个模型")
+                return
+        
+        # 优先级 3: OpenClaw 官方 API
         try:
             models = self._fetch_from_openclaw_api()
             if models:
@@ -77,7 +99,7 @@ class ModelSelector:
         except Exception as e:
             print(f"⚠️ OpenClaw API 不可用：{e}")
         
-        # 优先级 3: 标准单一模型配置（降级方案）
+        # 优先级 4: 标准单一模型配置（降级方案）
         print("⚠️ 降级到标准单一模型配置")
         self.available_models = [self.FALLBACK_MODEL]
     

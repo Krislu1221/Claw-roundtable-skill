@@ -30,14 +30,23 @@ RoundTable 启动
 └─────────────────────────────────┘
       ↓ (如果未指定)
 ┌─────────────────────────────────┐
-│ 优先级 2: OpenClaw 官方 API      │
+│ 优先级 2: 环境变量 ROUNDTable_   │
+│ - 格式："model1:tag1,tag2;      │
+│          model2:tag3,tag4"      │
+│ - 示例："bailian/glm-5:chinese; │
+│          bailian/kimi-k2.5:     │
+│          creative"              │
+└─────────────────────────────────┘
+      ↓ (如果未设置)
+┌─────────────────────────────────┐
+│ 优先级 3: OpenClaw 官方 API      │
 │ - 调用 openclaw.tools API        │
 │ - 获取安全的模型列表            │
 │ - 已过滤敏感信息                │
 └─────────────────────────────────┘
       ↓ (如果 API 不可用)
 ┌─────────────────────────────────┐
-│ 优先级 3: 标准单一模型配置       │
+│ 优先级 4: 标准单一模型配置       │
 │ - 降级到 bailian/qwen3.5-plus   │
 │ - 所有专家都使用这个模型        │
 └─────────────────────────────────┘
@@ -79,14 +88,23 @@ model = selector.select_model_for_role("design")
 # 输出：'bailian/kimi-k2.5'（匹配 creative 标签）
 ```
 
-### 方式 3：命令行指定
+### 方式 3：环境变量指定
 
 ```bash
 # 用户通过环境变量指定
-export ROUNDTable_MODELS="bailian/glm-5:chinese,bailian/kimi-k2.5:creative"
+# 格式：model_id:tag1,tag2;model_id2:tag3,tag4
+export ROUNDTable_MODELS="bailian/glm-5:chinese,code;bailian/kimi-k2.5:creative,long-context"
 
 # RoundTable 自动读取环境变量
+python -c "from roundtable_skill import ModelSelector; s = ModelSelector()"
+# 输出：✅ 从环境变量加载 2 个模型
 ```
+
+**环境变量格式说明**：
+- 多个模型用分号 `;` 分隔
+- 每个模型格式：`model_id:tag1,tag2,tag3`
+- model_id 是完整的模型标识（如 `bailian/glm-5`）
+- tags 是逗号分隔的标签列表
 
 ---
 
