@@ -18,8 +18,6 @@ import asyncio
 from datetime import datetime
 from typing import Optional, Dict, List
 
-from requirement_analyzer import EXPERT_PROFILES
-
 
 class RoundTableNotifier:
     """RoundTable 通知器"""
@@ -140,73 +138,6 @@ class RoundTableNotifier:
         print(f"📤 已发送完成通知")
         print(message)
     
-    async def send_start_notification_v2(self, user_channel: str, experts: List[str], topic_count: int):
-        """V2 发送开始通知"""
-        self.start_time = datetime.now()
-        
-        expert_names = [EXPERT_PROFILES[e].name for e in experts if e in EXPERT_PROFILES]
-        
-        message = f"""
-🚀 **RoundTable V2 已启动**
-
-**主题**：{self.topic}
-**专家阵容**：{' + '.join(expert_names)}
-**关键议题**：{topic_count} 个
-**状态**：讨论进行中
-
-预计耗时：{topic_count * len(experts) * 2} 分钟
-
-您可以随时查看进度，
-完成时会收到最终报告通知。
-"""
-        print(f"📤 已发送 V2 开始通知")
-        print(message)
-    
-    async def send_progress_update_v2(self, user_channel: str, current: int, total: int, topic_result):
-        """V2 发送进度更新"""
-        elapsed = (datetime.now() - self.start_time).total_seconds() / 60 if self.start_time else 0
-        
-        progress_bar = "█" * int(current / total * 10) + "░" * (10 - int(current / total * 10))
-        
-        message = f"""
-📊 **RoundTable V2 进度更新**
-
-**当前**：议题 {current}/{total} - {topic_result.topic_name}
-**进度**：{progress_bar} {current/total*100:.0f}%
-**已完成专家**：{len([r for r in topic_result.expert_results if r.success])}/{len(topic_result.expert_results)}
-**已耗时**：{elapsed:.1f} 分钟
-
-点击查看当前讨论内容 →
-"""
-        print(f"📤 已发送 V2 进度更新（议题{current}）")
-        print(message)
-    
-    async def send_completion_notification_v2(self, user_channel: str, final_plan: str, results: Dict):
-        """V2 发送完成通知"""
-        elapsed = (datetime.now() - self.start_time).total_seconds() / 60 if self.start_time else 0
-        
-        topic_count = len(results)
-        expert_count = sum(len(r.expert_results) for r in results.values())
-        
-        message = f"""
-✅ **RoundTable V2 讨论完成**
-
-**主题**：{self.topic}
-**总耗时**：{elapsed:.1f} 分钟
-**讨论议题**：{topic_count} 个
-**参与专家**：{expert_count} 人次
-
-**议题概览**：
-{chr(10).join(['- ' + r.topic_name + ' (' + r.priority + ')' for r in results.values()])}
-
-📄 **最终方案**：
-{final_plan[:1000]}...
-
-[查看完整报告] [下载 PDF] [分享给团队]
-"""
-        print(f"📤 已发送 V2 完成通知")
-        print(message)
-    
     async def send_timeout_warning(self, user_channel: str, round_num: int, timed_out_agents: List[str]):
         """
         发送超时警告
@@ -231,31 +162,6 @@ class RoundTableNotifier:
 
 
 # 使用示例
-
-    async def ask_model_config(self, user_channel: str) -> str:
-        """询问用户模型配置"""
-        message = f"""🎯 **RoundTable 模型配置**
-
-您想为本次讨论配置专用模型吗？
-
-**支持格式:**
-- 单模型：`bailian/glm-5`
-- 多模型：`bailian/glm-5,bailian/kimi-k2.5,bailian/qwen3.5-plus`
-- 带标签：`bailian/glm-5:code,bailian/kimi-k2.5:creative`
-
-**智能分配:**
-- 工程专家 → 匹配 code/technical 标签的模型
-- 设计专家 → 匹配 creative/long-context 标签的模型
-- 测试专家 → 匹配 balanced/fast 标签的模型
-
-**直接回车:** 使用 OpenClaw 默认模型
-
-请输入模型配置（或回车跳过）："""
-        
-        print(f"\n{message}")
-        # 由于没有用户交互，返回空字符串使用默认模型
-        return ""
-
 async def main():
     notifier = RoundTableNotifier("智能客服系统技术方案")
     
@@ -286,27 +192,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-    async def ask_model_config(self, user_channel: str) -> str:
-        """询问用户模型配置"""
-        message = f"""🎯 **RoundTable 模型配置**
-
-您想为本次讨论配置专用模型吗？
-
-**支持格式:**
-- 单模型：`bailian/glm-5`
-- 多模型：`bailian/glm-5,bailian/kimi-k2.5,bailian/qwen3.5-plus`
-- 带标签：`bailian/glm-5:code,bailian/kimi-k2.5:creative`
-
-**智能分配:**
-- 工程专家 → 匹配 code/technical 标签的模型
-- 设计专家 → 匹配 creative/long-context 标签的模型
-- 测试专家 → 匹配 balanced/fast 标签的模型
-
-**直接回车:** 使用 OpenClaw 默认模型
-
-请输入模型配置（或回车跳过）："""
-        
-        print(f"\n{message}")
-        # 由于没有用户交互，返回空字符串使用默认模型
-        return ""

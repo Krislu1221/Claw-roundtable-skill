@@ -25,7 +25,7 @@ if str(skills_dir) not in sys.path:
 
 from roundtable_notifier import RoundTableNotifier
 from agent_selector import AgentSelector, select_roundtable_agents
-from model_selector import ModelSelector, select_model_for_role
+from model_selector import ModelSelector
 
 
 class RoundState(Enum):
@@ -59,7 +59,7 @@ class RoundTableEngine:
     
     # 轮次配置（统一 300 秒）
     ROUNDS = {
-        "R1": RoundConfig("独立方案", 300, "各自阐述观点"),
+        "R1": RoundConfig("独立方案", "各自阐述观点", 300),
         "R2": RoundConfig("相互引用", 300, "引用他人 + 补充"),
         "R3": RoundConfig("深度分析", 300, "批判思维 + 评价"),
         "R4": RoundConfig("辩论完善", 300, "辩论 + 完善方案"),
@@ -67,7 +67,8 @@ class RoundTableEngine:
     }
     
     def __init__(self, topic: str, mode: str = "pre-ac", 
-                 agent_source: str = "", agents: Optional[List[str]] = None):
+                 agent_source: str = "", agents: Optional[List[str]] = None,
+                 enable_chat_room: bool = False):
         """
         初始化 RoundTable 引擎
         
@@ -75,13 +76,14 @@ class RoundTableEngine:
             topic: 讨论主题
             mode: 模式（pre-ac: AC 前讨论，post-ac: AC 后审查）
             agent_source: Agent 来源路径
-                         - 空：使用内置 Agent
-                         - "/path/to/agency-agents-zh": 使用外部 Agent
-            agents: 指定 Agent 列表（可选，不指定则自动选择）
+            agents: 指定 Agent 列表（可选）
+            enable_chat_room: 是否启用独立聊天室（默认 False）
         """
         self.topic = topic
         self.mode = mode
         self.agent_source = agent_source
+        self.enable_chat_room = enable_chat_room
+        self.chat_session_key: Optional[str] = None
         self.state = RoundState.PENDING
         self.start_time: Optional[datetime] = None
         self.end_time: Optional[datetime] = None
@@ -122,6 +124,10 @@ class RoundTableEngine:
         
         # 2. 发送开始通知
         await self.notifier.send_start_notification(user_channel)
+        
+        # 2.5 创建聊天室（如果启用）
+        if self.enable_chat_room:
+            await self.create_chat_room()
         
         # 3. 执行 5 轮讨论
         for round_name, config in self.ROUNDS.items():
@@ -169,32 +175,23 @@ class RoundTableEngine:
             List[AgentResult]: Agent 执行结果列表
         """
         agents = self.get_agents_for_round(round_name)
-        tasks = []
+        agent_results = []
         
+        # 串行执行（便于聊天室广播）
         for agent_id in agents:
             task = self.build_task(agent_id, round_name)
-            tasks.append(self.execute_agent(agent_id, task, config.timeout))
-        
-        # 并行执行所有 Agent
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # 处理结果
-        agent_results = []
-        for i, result in enumerate(results):
-            agent_id = agents[i]
-            if isinstance(result, Exception):
-                # 执行失败
-                agent_results.append(AgentResult(
-                    agent_id=agent_id,
-                    content="",
-                    elapsed_seconds=0,
-                    success=False
-                ))
-                print(f"  ❌ {agent_id}: 执行失败 - {result}")
+            result = await self.execute_agent(agent_id, task, config.timeout)
+            
+            if not result.success:
+                print(f"  ❌ {agent_id}: 执行失败")
             else:
-                # 执行成功
-                agent_results.append(result)
                 print(f"  ✅ {agent_id}: {result.elapsed_seconds:.1f}秒")
+                
+                # 广播到聊天室（如果启用）
+                if self.enable_chat_room:
+                    await self.broadcast_to_chat(agent_id, result.content, round_name)
+            
+            agent_results.append(result)
         
         return agent_results
     
@@ -221,11 +218,16 @@ class RoundTableEngine:
                 print(f"    🚀 创建子 Agent: {agent_id}")
                 print(f"    📋 任务：{self.current_round} - {self.topic[:50]}...")
                 
+                # 使用 ModelSelector 获取合适的模型
+                model_id = self.model_selector.select_model_for_role(agent_id.split('/')[0])
+                print(f"    🎯 使用模型：{model_id}")
+                
                 # 创建子 Agent 会话
                 session_result = await sessions_spawn(
                     task=task,
                     runtime="subagent",
                     mode="run",
+                    model=model_id,  # 使用动态选择的模型
                     label=f"rt-{self.topic[:15]}-{agent_id.split('/')[-1]}-{self.current_round}",
                     timeoutSeconds=timeout,
                     thinking="on"  # 启用深度思考
@@ -289,9 +291,14 @@ class RoundTableEngine:
         return AgentResult(agent_id, "", 0, False)
     
     def _generate_detailed_mock_content(self, agent_id: str, task: str) -> str:
-        """生成详细的模拟内容（当 sessions_spawn 不可用时）- 简洁版，无代码块"""
+        """生成详细的模拟内容（当 sessions_spawn 不可用时）
         
-        if 'engineering' in agent_id:
+        P0-2 修复：委托给 MockContentGenerator 类
+        """
+        return MockContentGenerator.generate(agent_id, task)
+        
+        # 旧代码保留但不执行（向后兼容）
+        if False and 'engineering' in agent_id:
             return """## 技术方案深度分析
 
 ### 一、需求理解
@@ -1264,3 +1271,168 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+# ============================================================================
+# MockContentGenerator - P0-2 重构：拆分 600+ 行长方法
+# ============================================================================
+
+class MockContentGenerator:
+    """模拟内容生成器"""
+    
+    @staticmethod
+    def generate(agent_id: str, task: str) -> str:
+        """根据 Agent ID 生成内容"""
+        if 'engineering' in agent_id:
+            return MockContentGenerator._engineering()
+        elif 'design' in agent_id:
+            return MockContentGenerator._design()
+        elif 'testing' in agent_id:
+            return MockContentGenerator._testing()
+        else:
+            return MockContentGenerator._generic()
+    
+    @staticmethod
+    def _engineering() -> str:
+        return """## 技术方案深度分析
+
+### 一、需求理解
+核心需求：1) Todo 应用，2) 用户认证，3) 数据持久化，4) 良好体验。
+
+### 二、技术选型
+前端：React 18 + TypeScript + Ant Design
+后端：Node.js 20 + NestJS + PostgreSQL 15
+
+### 三、架构设计
+三层架构：客户端 → API 网关 → 应用层 → 数据层
+
+### 四、关键实现
+1. JWT 认证：Access Token 15 分钟，Refresh Token 7 天
+2. 数据模型：User 和 Todo 表
+3. API：RESTful 风格
+
+### 五、工时评估
+总计 22 人天
+
+### 六、风险评估
+技术风险：低；进度风险：中
+"""
+    
+    @staticmethod
+    def _design() -> str:
+        return """## 用户体验深度分析
+
+### 一、用户需求
+**目标用户**：20-45 岁白领、学生
+**核心痛点**：易忘事、缺乏优先级管理
+
+### 二、设计原则
+1. 简洁高效：3 秒内添加
+2. 视觉层次：当前 > 未来 > 已完成
+3. 反馈及时
+
+### 三、界面方案
+**色彩**：品牌蓝#1890FF、成功绿#52C41A
+**布局**：Header + 日期 + 输入框 + 列表
+"""
+    
+    @staticmethod
+    def _testing() -> str:
+        return """## 测试策略深度分析
+
+### 一、测试金字塔
+单元（70%）→ 集成（20%）→ E2E（10%）
+
+### 二、单元测试
+**框架**：Jest + React Testing Library
+**覆盖率**：80% 以上
+
+### 三、E2E 测试
+**工具**：Playwright
+**流程**：登录 → 添加 → 完成 → 删除
+
+### 四、CI/CD
+GitHub Actions 自动测试
+"""
+    
+    @staticmethod
+    def _generic() -> str:
+        return """## 专业深度分析
+
+### 一、问题理解
+深入分析项目需求和核心挑战
+
+### 二、专业建议
+提供具体的解决方案和实施建议
+
+### 三、实施计划
+分阶段实施，明确交付物
+
+### 四、风险评估
+识别风险并制定应对策略
+"""
+
+
+
+# ============================================================================
+# 聊天室管理功能 - 独立讨论室
+# ============================================================================
+
+    async def create_chat_room(self):
+        """创建讨论聊天室"""
+        try:
+            from openclaw.tools import sessions_spawn
+            
+            self.chat_session_key = await sessions_spawn(
+                task=f"RoundTable 讨论记录：{self.topic}",
+                runtime="subagent",
+                mode="session",
+                label=f"rt-chat-{self.topic[:20]}",
+                cleanup="keep"  # 保留会话，手动清理
+            )
+            print(f"✅ 聊天室已创建：{self.chat_session_key}")
+            return self.chat_session_key
+        except Exception as e:
+            print(f"⚠️ 创建聊天室失败：{e}")
+            return None
+    
+    async def broadcast_to_chat(self, agent_id: str, content: str, round_name: str = ""):
+        """广播 Agent 发言到聊天室"""
+        try:
+            from openclaw.tools import sessions_send
+            
+            if not self.chat_session_key:
+                return  # 聊天室未创建，跳过
+            
+            # 截断过长内容（避免刷屏）
+            max_length = 1000
+            if len(content) > max_length:
+                content = content[:max_length] + "\n\n...(内容过长，请查看完整报告)"
+            
+            # 格式化消息
+            agent_name = agent_id.split('/')[-1]
+            round_info = f"【{round_name}】" if round_name else ""
+            message = f"🎤 {round_info} **{agent_name}**:\n\n{content}"
+            
+            await sessions_send(
+                sessionKey=self.chat_session_key,
+                message=message
+            )
+        except Exception as e:
+            # 广播失败不影响主流程
+            print(f"⚠️ 广播消息失败：{e}")
+    
+    async def close_chat_room(self):
+        """关闭聊天室（手动清理）"""
+        try:
+            from openclaw.tools import sessions_send
+            
+            if self.chat_session_key:
+                # 发送结束消息
+                await sessions_send(
+                    sessionKey=self.chat_session_key,
+                    message=f"✅ RoundTable 讨论已完成！\n\n主题：{self.topic}\n时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                )
+                print(f"✅ 聊天室已关闭：{self.chat_session_key}")
+        except Exception as e:
+            print(f"⚠️ 关闭聊天室失败：{e}")

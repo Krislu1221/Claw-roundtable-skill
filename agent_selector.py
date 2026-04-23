@@ -4,7 +4,7 @@ Agent 选择器 - 根据任务自动选择合适的人格身份
 
 功能：
 1. 任务分析 → 识别需要的专业领域
-2. Agent 匹配 → 从 agency-agents 选择最佳 Agent
+2. Agent 匹配 → 从 agency-agents-zh 选择最佳 Agent
 3. 人格切换 → 加载对应的 Prompt
 4. 子 Agent 创建 → 创建专门 Agent 完成任务
 """
@@ -113,18 +113,18 @@ class AgentSelector:
         
         Args:
             agent_source: Agent 来源路径
-                         - 空：使用打包的 agency-agents（604 个 Agent）
-                         - "/path/to/agency-agents": 使用外部 Agent
+                         - 空：使用打包的 agency-agents-zh（604 个 Agent）
+                         - "/path/to/agency-agents-zh": 使用外部 Agent
         """
         self.agent_source = agent_source
-        # 使用打包的 agency-agents（优先）
-        self.packed_agents_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agency-agents")
+        # 使用打包的 agency-agents-zh（优先）
+        self.packed_agents_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agency-agents-zh")
         # 内置的 3 个基础 Agent（降级）
         self.builtin_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agency")
         self.available_agents = self._scan_available_agents()
     
     def _scan_available_agents(self) -> List[AgentProfile]:
-        """扫描可用的 Agent（优先打包的 agency-agents，降级到内置）
+        """扫描可用的 Agent（优先打包的 agency-agents-zh，降级到内置）
         
         支持：
         - 递归扫描所有子目录（包括 game-development/unity 等）
@@ -137,7 +137,7 @@ class AgentSelector:
         # 扫描路径（优先级从高到低）
         paths_to_scan = []
         
-        # 1. 打包的 agency-agents（170 个 Agent）- 最高优先级
+        # 1. 打包的 agency-agents-zh（146 个 Agent）- 最高优先级
         if os.path.exists(self.packed_agents_path):
             paths_to_scan.append(("packed", self.packed_agents_path))
         
@@ -362,7 +362,7 @@ class AgentSelector:
     
     def select_agents_for_roundtable(self, topic: str) -> List[str]:
         """
-        为 RoundTable 智能选择多个 Agent（使用 170 个 Agent 池）
+        为 RoundTable 智能选择多个 Agent（使用 146 个 Agent 池）
         
         智能选择逻辑：
         1. 分析主题关键词
