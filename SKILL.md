@@ -1,41 +1,80 @@
 ---
-name: roundtable
-description: "RoundTable Skill - 多 Agent 深度讨论系统，模拟真实圆桌会议场景。Triggers: user wants multi-agent discussion, brainstorming, expert review, compliance check."
+name: roundtable-v2
+description: "Implementation guide for RoundTable v2.0 - a universal multi-agent discussion engine with heterogeneous model routing, MMR intent parsing, and convergence control."
 ---
 
-# RoundTable Skill - 多 Agent 深度讨论系统
+# RoundTable v2.0 - Universal Multi-Agent Discussion Engine
 
-## 技能说明
+## Core Architecture
+A robust system for complex task deliberation using multiple Agents with **heterogeneous model routing** (different models for different roles) and **convergence control**.
 
-RoundTable 是一个多专家 Agent 讨论系统，模拟真实的圆桌会议场景。每个 Agent 从不同专业角度（技术、安全、体验等）提供独立观点，经过 5 轮深度讨论后形成更完善的方案。用户无须提前创建子Agent，它利用Sessions_Spawn根据项目需求自动创建临时的子Agent，每个Agent都会扮演不同的角色，得到不同的Prompt，配置不同的模型，进行圆桌讨论，以期实现多维度专业角度的审视和合规，消除单一agent的技能盲区。适用于复杂项目前期的头脑风暴或项目后期的优化和合规审查。该技能会消耗成倍Token和时间，应根据需求选择。用户还可以参与补充意见以增强讨论。
-配置有多模型的用户会获得更好的效果。该Skill打包了Agency-Agent的146个垂直领域专家的Prompt，使得每个子agent都具备专业领域的思维方式。
+### Key Features
+1.  **Intent Parser (MMR):** Uses Maximal Marginal Relevance to select diverse experts, preventing "echo chambers."
+2.  **Adaptive Model Router:**
+    -   **Local Mode:** Reads `local_models.json` for explicit model routing (e.g., MiniMax for creative, GLM for logic).
+    -   **Public Mode:** Reads `roundtable_config.yaml` for security (no environment scanning).
+    -   **Fallback:** Single-model multi-role mode if no config is found.
+3.  **Convergence Engine:** Monitors semantic divergence to stop infinite loops and save tokens.
 
-## 版本
+## Module Implementation
 
-0.9.0
+### 1. Model Router (`model_router.py`)
+Adaptive routing based on capability tags.
 
-## 触发词
+```python
+class ModelRouter:
+    def __init__(self, local_file=None, config_file=None):
+        self.mode = "homogeneous"
+        self.capability_map = {}
+        self.available_models = []
+        # Priority: Local JSON (User) > YAML Config (Public)
+        if local_file and os.path.exists(local_file):
+            self._load_local(local_file)
+        elif config_file and os.path.exists(config_file):
+            self._load_yaml(config_file)
+            
+        if len(self.available_models) > 1: self.mode = "heterogeneous"
 
-- RoundTable
-- 圆桌会议
-- 圆桌讨论
-- 多 Agent 讨论
-- 多专家讨论
+    def get_model_for_role(self, capability: str) -> str:
+        if self.mode == "homogeneous": return None
+        # Match capability tags (logic, creative, etc.)
+        candidates = [m for m, tags in self.capability_map.items() if capability in tags]
+        return candidates[0] if candidates else self.available_models[0]
+```
 
-## 确认机制
+### 2. Intent Parser (`intent_parser.py`)
+Matches user input to expert domains while enforcing diversity.
 
-自动确认：RoundTable 启动后自动开始讨论，无需手动确认
+```python
+def parse(self, input_text: str, top_k=3):
+    # 1. Keyword scoring
+    # 2. MMR Selection (Maximize relevance, minimize similarity between selected experts)
+    # 3. Return diverse expert list + fuzziness score
+    pass
+```
 
-## 运行时行为
+### 3. Convergence (`convergence.py`)
+Prevents "argument loops."
 
-- 子 Agent 调用：使用 openclaw.tools.sessions_spawn 创建临时子 Agent
-- 讨论历史：每轮讨论会传递完整历史给子 Agent（用于上下文引用）
-- 模型选择：优先使用 OpenClaw 官方 API，降级到标准配置或环境变量
+```python
+def check(self, history, current_round, max_rounds):
+    if current_round >= max_rounds: return "FORCE_ARBITRATE"
+    # Detect repetition or consensus keywords
+    if "consensus" in recent_turns: return "STOP"
+    return "CONTINUE"
+```
 
-## 作者
+## Usage Strategy
+1.  **For Local Development:** Use `local_models.json` to define your specific model lineup (e.g., `qwen-logic`, `minimax-creative`).
+2.  **For Open Source (ClawHub):** Use `roundtable_config.yaml`. Never scan `os.environ` directly to ensure security compliance.
 
-Krislu <krislu666@foxmail.com>
+## File Paths
+- `core/model_router.py`
+- `core/intent_parser.py`
+- `core/prompt_builder.py`
+- `core/convergence.py`
 
-## 许可
+---
 
-MIT
+**版本**: 2.0.0  
+**更新日期**: 2026-04-23
